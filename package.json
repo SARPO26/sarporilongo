@@ -1,0 +1,10 @@
+{
+  "name": "ruview-spatial-pose",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Zone-aware Bayesian pose smoothing, CSI cleanup and calibration for the RuView dashboard.",
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RuView Spatial Pose</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1b1f24; --muted: #5d6673; --line: #dde1e6;
+    --accent: #2f6fde; --ok: #1f8a4c; --warn: #b26a00; --bad: #c03636; --bar: #2f6fde; --bar2: #9aa5b4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #111418; --panel: #1a1e24; --text: #e6e9ed; --muted: #9aa3ae; --line: #2c323a;
+      --accent: #6c9cf0; --ok: #4cc27f; --warn: #e3a33c; --bad: #ef6b6b; --bar: #6c9cf0; --bar2: #56606c;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #111418; --panel: #1a1e24; --text: #e6e9ed; --muted: #9aa3ae; --line: #2c323a;
+    --accent: #6c9cf0; --ok: #4cc27f; --warn: #e3a33c; --bad: #ef6b6b; --bar: #6c9cf0; --bar2: #56606c;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+  header { max-width: 1100px; margin: 0 auto; padding: 16px 16px 0; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+  h1 { font-size: 18px; margin: 0 auto 0 0; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 12px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; min-width: 0; }
+  .wide { grid-column: 1 / -1; }
+  .cols { display: grid; gap: 16px 24px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+  .big { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; }
+  .big div span { display: block; color: var(--muted); font-size: 12px; }
+  .big strong { font-size: 26px; font-variant-numeric: tabular-nums; }
+  .row { display: grid; grid-template-columns: 90px 1fr 64px; gap: 8px; align-items: center; margin: 6px 0; }
+  .track { height: 10px; background: var(--line); border-radius: 5px; overflow: hidden; position: relative; }
+  .fill { height: 100%; background: var(--bar); width: 0; transition: width .15s; }
+  .fill.raw { background: var(--bar2); }
+  .mark { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--warn); }
+  .num { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+  button, select, input[type=text], input[type=number] { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  input[type=number] { width: 90px; }
+  input[type=text] { min-width: 0; flex: 1 1 200px; }
+  input[type=range] { width: 100%; }
+  .flex { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .muted { color: var(--muted); font-size: 12px; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; border: 1px solid var(--line); }
+  .pill.ok { color: var(--ok); border-color: var(--ok); }
+  .pill.bad { color: var(--bad); border-color: var(--bad); }
+  .warn { color: var(--warn); margin: 8px 0 0; padding-left: 18px; }
+  .slider { display: grid; grid-template-columns: 1fr 100px; gap: 4px 8px; align-items: center; margin-bottom: 12px; }
+  .slider label { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 8px; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  td, th { text-align: right; padding: 4px 6px; border-bottom: 1px solid var(--line); }
+  td:first-child, th:first-child { text-align: left; }
+  .progress { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin-top: 8px; }
+  .progress div { height: 100%; width: 0; background: var(--ok); }
+  #banner { margin-top: 10px; }
+  @media (max-width: 480px) { .big strong { font-size: 20px; } .row { grid-template-columns: 70px 1fr 56px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>RuView Spatial Pose</h1>
+  <select id="source" aria-label="Data source">
+    <option value="sim">Simulator</option>
+    <option value="ws">WebSocket</option>
+  </select>
+  <input id="ws-url" type="text" value="ws://localhost:3000/ws" aria-label="WebSocket URL">
+  <button id="connect" class="primary">Start</button>
+  <span id="status" class="pill">stopped</span>
+  <span id="rate" class="muted"></span>
+</header>
+
+<main>
+  <section>
+    <h2>Now</h2>
+    <div class="big">
+      <div><span>Zone</span><strong id="current-zone">–</strong></div>
+      <div><span>Pose</span><strong id="current-pose">–</strong></div>
+      <div><span>Confidence</span><strong id="pose-confidence">–</strong></div>
+    </div>
+    <div id="banner" class="muted"></div>
+    <h2 style="margin-top:16px">Pose: after prior <span class="muted">(blue)</span> vs raw model <span class="muted">(grey)</span></h2>
+    <div id="pose-bars"></div>
+  </section>
+
+  <section>
+    <h2>Link disturbance</h2>
+    <div id="feature-bars"></div>
+    <p class="muted">Variance bars use a log scale. Orange marks are the current thresholds. Values replaced as spikes by the Hampel filter: <span id="outliers">0</span></p>
+  </section>
+
+  <section id="sim-panel">
+    <h2>Simulator</h2>
+    <div class="flex" id="sim-zones"></div>
+    <div class="slider" style="margin-top:12px">
+      <label for="halluc">Raw model error rate <span id="halluc-val" class="muted"></span></label>
+      <input id="halluc" type="range" min="0" max="0.8" step="0.05" value="0.3">
+    </div>
+    <p class="muted">Put the simulated person in a zone, then calibrate the same zone on the right, as you would in your room.</p>
+  </section>
+
+  <section class="wide">
+    <h2>Calibration</h2>
+    <div class="cols">
+    <div>
+    <p class="muted">Stand, sit or lie in each zone and press its button. Record EMPTY with nobody in the room. For DOOR, walk in and out of the door the whole time.</p>
+    <div class="flex">
+      <label>Seconds <input id="calib-secs" type="number" min="2" max="60" value="6"></label>
+    </div>
+    <div class="flex" id="calib-buttons" style="margin-top:8px"></div>
+    <div class="progress"><div id="calib-progress"></div></div>
+    <div id="calib-status" class="muted" style="margin-top:6px"></div>
+    </div>
+    <div>
+    <table>
+      <thead><tr><th>Zone</th><th>B2B var</th><th>B1R var</th><th>B2R var</th><th>B2B amp</th></tr></thead>
+      <tbody id="calib-table"></tbody>
+    </table>
+    <ul id="calib-warnings" class="warn"></ul>
+    <div class="flex" style="margin-top:8px"><button id="calib-clear">Clear calibration</button></div>
+    </div>
+    </div>
+  </section>
+
+  <section class="wide">
+    <h2>Thresholds and smoothing</h2>
+    <div style="display:grid; gap:0 24px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));" id="sliders"></div>
+    <div class="flex">
+      <button id="export">Export settings</button>
+      <button id="import">Import settings</button>
+      <button id="defaults">Reset to defaults</button>
+      <span class="muted">Settings are saved in this browser.</span>
+    </div>
+  </section>
+</main>
+
+<script src="spatial-pose-optimizer.js"></script>
+<script src="csi-simulator.js"></script>
+<script>
+/*
+ * Map your RuView WebSocket message to the optimizer's input.
+ * Each link can be a number (amplitude) or { amp: [...], phase: [...] }
+ * with one entry per subcarrier. Edit this if your server uses other names.
+ */
+function adaptMessage(data) {
+  return {
+    b2b: data.b2b ?? data.b2b_csi ?? data.b2b_amp,
+    b1r: data.b1r ?? data.b1r_csi ?? data.b1r_amp,
+    b2r: data.b2r ?? data.b2r_csi ?? data.b2r_amp,
+    raw_pose_probs: data.raw_pose_probs ?? data.pose_probs,
+    b2b_mean_attenuation: data.b2b_mean_attenuation,
+  };
+}
+
+(function () {
+  const { SpatialPoseOptimizer, ZONES, DEFAULT_SETTINGS } = window.SpatialPose;
+  const STORE_KEY = 'ruview.spatialPose.v1';
+  const $ = (id) => document.getElementById(id);
+
+  const optimizer = new SpatialPoseOptimizer();
+  const sim = new CsiSimulator({ seed: Date.now() & 0xffff });
+  let running = false, ws = null, simTimer = null, reconnectTimer = null;
+  let stamps = [];
+
+  // ---- persistence ----
+  function save() {
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify({ settings: optimizer.getSettings(), calibration: optimizer.calibration, wsUrl: $('ws-url').value, source: $('source').value }));
+    } catch (e) { /* storage blocked: settings just won't persist */ }
+  }
+  function load() {
+    try {
+      const s = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+      if (!s) return;
+      if (s.settings) optimizer.setSettings(s.settings);
+      if (s.calibration) optimizer.calibration = s.calibration;
+      if (s.wsUrl) $('ws-url').value = s.wsUrl;
+      if (s.source) $('source').value = s.source;
+      if (Object.keys(optimizer.calibration).length) optimizer.lastWarnings = window.SpatialPose.deriveThresholds(optimizer.calibration, optimizer.settings).warnings;
+    } catch (e) { /* ignore bad or blocked storage */ }
+  }
+
+  // ---- sliders ----
+  const fmt = (v) => v == null ? 'off' : Math.abs(v) >= 100 ? v.toFixed(0) : Math.abs(v) >= 1 ? v.toFixed(2) : v.toPrecision(2);
+  const SLIDERS = [
+    { key: 'presenceVar', label: 'Presence: B2B variance above', log: true },
+    { key: 'doorRouterVar', label: 'Door: both router variances above', log: true },
+    { key: 'doorB2BVarMax', label: 'Door: B2B variance below', log: true, nullable: true },
+    { key: 'deskAttenMin', label: 'Desk: B2B attenuation at least', min: -5, max: 30, step: 0.1 },
+    { key: 'bedAttenMin', label: 'Bed: B2B attenuation at least', min: -5, max: 30, step: 0.1 },
+    { key: 'zoneHold', label: 'Samples before zone switches', min: 1, max: 40, step: 1, top: true },
+    { key: 'smoothing', label: 'Weight of newest pose (1 = no smoothing)', min: 0.05, max: 1, step: 0.05, top: true },
+    { key: 'windowSize', label: 'Variance window (samples)', min: 5, max: 100, step: 1, top: true },
+  ];
+  const getVal = (s) => s.top ? optimizer.settings[s.key] : optimizer.settings.thresholds[s.key];
+  function setVal(s, v) {
+    if (s.top) optimizer.setSettings({ [s.key]: v });
+    else optimizer.setSettings({ thresholds: { [s.key]: v } });
+    save();
+  }
+  function buildSliders() {
+    const box = $('sliders');
+    box.innerHTML = '';
+    for (const s of SLIDERS) {
+      const wrap = document.createElement('div');
+      wrap.className = 'slider';
+      const id = 'sl-' + s.key;
+      wrap.innerHTML = `<label for="${id}">${s.label}${s.nullable ? ` <span class="muted"><input type="checkbox" id="${id}-on"> use</span>` : ''}</label>
+        <input type="range" id="${id}"><input type="number" id="${id}-n" step="any">`;
+      box.appendChild(wrap);
+      const range = wrap.querySelector('#' + id), num = wrap.querySelector('#' + id + '-n'), on = wrap.querySelector('#' + id + '-on');
+      if (s.log) { range.min = -3; range.max = 5; range.step = 0.01; } else { range.min = s.min; range.max = s.max; range.step = s.step; }
+      s.sync = () => {
+        const v = getVal(s);
+        if (on) { on.checked = v != null; range.disabled = num.disabled = v == null; }
+        if (v == null) { num.value = ''; return; }
+        if (!s.log && v > +range.max) range.max = Math.ceil(v * 1.5);
+        range.value = s.log ? Math.log10(Math.max(v, 1e-3)) : v;
+        num.value = +fmt(v);
+      };
+      range.addEventListener('input', () => { setVal(s, s.log ? Math.pow(10, +range.value) : +range.value); s.sync(); });
+      num.addEventListener('change', () => { if (num.value !== '' && isFinite(+num.value)) { setVal(s, +num.value); s.sync(); } });
+      if (on) on.addEventListener('change', () => { setVal(s, on.checked ? (optimizer.calibration.DOOR ? optimizer.calibration.DOOR.vB2B * 2 : DEFAULT_SETTINGS.thresholds[s.key]) : null); s.sync(); });
+      s.sync();
+    }
+  }
+  const syncSliders = () => SLIDERS.forEach((s) => s.sync && s.sync());
+
+  // ---- bars ----
+  function bars(container, rows) {
+    container.innerHTML = rows.map((r) => `<div class="row"><span>${r.label}</span><div class="track">${r.fills.map((f) => `<div class="fill ${f.cls || ''}" style="width:${(Math.max(0, Math.min(1, f.v)) * 100).toFixed(1)}%;${f.cls ? 'margin-top:1px;height:4px' : ''}"></div>`).join('')}${(r.marks || []).filter((m) => m != null).map((m) => `<div class="mark" style="left:${(Math.max(0, Math.min(1, m)) * 100).toFixed(1)}%"></div>`).join('')}</div><span class="num">${r.text}</span></div>`).join('');
+  }
+  const logPos = (v) => v == null ? null : (Math.log10(Math.max(v, 1e-3)) + 3) / 8; // 1e-3 .. 1e5
+
+  // ---- main update ----
+  function onSample(msg) {
+    const now = performance.now();
+    stamps.push(now);
+    while (stamps.length && now - stamps[0] > 2000) stamps.shift();
+
+    const r = optimizer.update(msg);
+    $('current-zone').innerText = r.zone || '–';
+    $('current-pose').innerText = r.pose;
+    $('pose-confidence').innerText = r.confidence == null ? '–' : (r.confidence * 100).toFixed(1) + '%';
+    $('banner').innerText = r.attenuationKnown ? (r.candidateZone !== r.zone ? `Switching to ${r.candidateZone}…` : '') : 'No empty-room baseline yet, so DESK and BED look the same. Record EMPTY in Calibration.';
+
+    const poses = [...new Set([...Object.keys(r.distribution), ...Object.keys(r.rawDistribution)])].sort();
+    bars($('pose-bars'), poses.map((p) => ({ label: p, text: r.distribution[p] != null ? (r.distribution[p] * 100).toFixed(0) + '%' : '–', fills: [{ v: r.distribution[p] || 0 }, { v: r.rawDistribution[p] || 0, cls: 'raw' }] })));
+
+    const f = r.features, t = optimizer.settings.thresholds;
+    bars($('feature-bars'), [
+      { label: 'B2B var', text: fmt(f.vB2B), fills: [{ v: logPos(f.vB2B) }], marks: [logPos(t.presenceVar), logPos(t.doorB2BVarMax)] },
+      { label: 'B1R var', text: fmt(f.vB1R), fills: [{ v: logPos(f.vB1R) }], marks: [logPos(t.doorRouterVar)] },
+      { label: 'B2R var', text: fmt(f.vB2R), fills: [{ v: logPos(f.vB2R) }], marks: [logPos(t.doorRouterVar)] },
+      { label: 'B2B atten', text: f.att == null ? '–' : fmt(f.att), fills: [{ v: f.att == null ? 0 : (f.att + 5) / 35 }], marks: [(t.bedAttenMin + 5) / 35, (t.deskAttenMin + 5) / 35] },
+    ]);
+    const ls = Object.values(f.links), nOut = ls.reduce((s, l) => s + (l.outliers || 0), 0), nAll = ls.reduce((s, l) => s + (l.values || 0), 0);
+    $('outliers').innerText = `${nOut} (${nAll ? (nOut / nAll * 100).toFixed(2) : 0}%)`;
+
+    const p = optimizer.calibrationProgress;
+    if (p) {
+      $('calib-progress').style.width = (p.done / p.total * 100) + '%';
+      $('calib-status').innerText = p.settling ? `Recording ${p.zone}: settling…` : `Recording ${p.zone}: ${p.done}/${p.total}`;
+    }
+    if (r.calibrationDone) {
+      $('calib-progress').style.width = '0';
+      $('calib-status').innerText = `${r.calibrationDone} recorded. Thresholds updated.`;
+      renderCalib();
+      syncSliders();
+      save();
+    }
+  }
+
+  function sampleRate() {
+    if (stamps.length < 2) return 0;
+    return (stamps.length - 1) / ((stamps[stamps.length - 1] - stamps[0]) / 1000);
+  }
+
+  // ---- calibration UI ----
+  function renderCalib() {
+    $('calib-table').innerHTML = ZONES.map((z) => {
+      const c = optimizer.calibration[z];
+      return `<tr><td>${z}</td>${c ? [c.vB2B, c.vB1R, c.vB2R, c.b2bAmp].map((v) => `<td>${fmt(v)}</td>`).join('') : '<td colspan="4" class="muted">not recorded</td>'}</tr>`;
+    }).join('');
+    $('calib-warnings').innerHTML = optimizer.lastWarnings.map((w) => `<li>${w}</li>`).join('');
+  }
+  for (const z of ZONES) {
+    const b = document.createElement('button');
+    b.textContent = 'Record ' + z;
+    b.addEventListener('click', () => {
+      if (!running) { $('calib-status').innerText = 'Start the data feed first.'; return; }
+      const rate = sampleRate() || 20;
+      const n = Math.max(20, Math.round(+$('calib-secs').value * rate));
+      optimizer.startCalibration(z, n);
+      $('calib-status').innerText = `Recording ${z}…`;
+    });
+    $('calib-buttons').appendChild(b);
+  }
+  $('calib-clear').addEventListener('click', () => {
+    optimizer.clearCalibration();
+    optimizer.setSettings({ thresholds: DEFAULT_SETTINGS.thresholds, baselineB2BAmp: null });
+    renderCalib(); syncSliders(); save();
+    $('calib-status').innerText = 'Calibration cleared.';
+  });
+
+  // ---- simulator UI ----
+  for (const z of ZONES) {
+    const b = document.createElement('button');
+    b.textContent = z;
+    b.dataset.zone = z;
+    b.addEventListener('click', () => { sim.zone = z; markSimZone(); });
+    $('sim-zones').appendChild(b);
+  }
+  function markSimZone() {
+    for (const b of $('sim-zones').children) b.classList.toggle('primary', b.dataset.zone === sim.zone);
+  }
+  $('halluc').addEventListener('input', () => { sim.hallucination = +$('halluc').value; $('halluc-val').innerText = Math.round(sim.hallucination * 100) + '%'; });
+  $('halluc').dispatchEvent(new Event('input'));
+  markSimZone();
+
+  // ---- data sources ----
+  function setStatus(text, cls) { const s = $('status'); s.textContent = text; s.className = 'pill ' + (cls || ''); }
+
+  function openSocket() {
+    try { ws = new WebSocket($('ws-url').value); } catch (e) { setStatus('bad URL', 'bad'); return; }
+    setStatus('connecting…');
+    ws.onopen = () => setStatus('connected', 'ok');
+    ws.onmessage = (event) => {
+      let data;
+      try { data = JSON.parse(event.data); } catch (e) { return; }
+      onSample(adaptMessage(data));
+    };
+    ws.onclose = () => {
+      ws = null;
+      if (!running) return;
+      setStatus('reconnecting…', 'bad');
+      reconnectTimer = setTimeout(openSocket, 2000);
+    };
+  }
+
+  function start() {
+    running = true;
+    optimizer.reset();
+    stamps = [];
+    $('connect').textContent = 'Stop';
+    if ($('source').value === 'sim') {
+      setStatus('simulating', 'ok');
+      simTimer = setInterval(() => onSample(sim.next()), 50);
+    } else openSocket();
+    $('sim-panel').style.display = $('source').value === 'sim' ? '' : 'none';
+  }
+  function stop() {
+    running = false;
+    clearInterval(simTimer); clearTimeout(reconnectTimer);
+    if (ws) ws.close();
+    optimizer.cancelCalibration();
+    $('connect').textContent = 'Start';
+    setStatus('stopped');
+  }
+  $('connect').addEventListener('click', () => (running ? stop() : start()));
+  $('source').addEventListener('change', () => { if (running) stop(); $('sim-panel').style.display = $('source').value === 'sim' ? '' : 'none'; save(); });
+  $('ws-url').addEventListener('change', save);
+  setInterval(() => { const r = sampleRate(); $('rate').innerText = running && r ? r.toFixed(0) + ' samples/s' : ''; }, 1000);
+
+  // ---- settings import/export ----
+  $('export').addEventListener('click', () => {
+    const blob = new Blob([JSON.stringify({ settings: optimizer.getSettings(), calibration: optimizer.calibration }, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'ruview-spatial-pose-settings.json';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+  $('import').addEventListener('click', () => {
+    const input = document.createElement('input');
+    input.type = 'file'; input.accept = 'application/json';
+    input.onchange = async () => {
+      try {
+        const s = JSON.parse(await input.files[0].text());
+        if (s.settings) optimizer.setSettings(s.settings);
+        if (s.calibration) optimizer.calibration = s.calibration;
+        renderCalib(); syncSliders(); save();
+      } catch (e) { alert('Could not read that file: ' + e.message); }
+    };
+    input.click();
+  });
+  $('defaults').addEventListener('click', () => {
+    optimizer.clearCalibration();
+    optimizer.setSettings(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)));
+    renderCalib(); syncSliders(); save();
+  });
+
+  load();
+  buildSliders();
+  renderCalib();
+  $('sim-panel').style.display = $('source').value === 'sim' ? '' : 'none';
+  window.optimizer = optimizer; // handy from the browser console
+})();
+</script>
+</body>
+</html>
